@@ -37,7 +37,7 @@ It intercepts file accesses, process executions, and network connections to prot
 You can install SandPip directly from GitHub using `pip`:
 
 ```bash
-pip install git+https://github.com/YOUR_GITHUB_USERNAME/sandpip.git
+pip install git+https://github.com/Kebiproger/sandpip.git
 ```
 
 > [!NOTE]
