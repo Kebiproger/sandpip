@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sandpip"
+version = "1.0.0"
+description = "A secure wrapper for pip utilizing LD_PRELOAD sandboxing"
+readme = "README.md"
+requires-python = ">=3.7"
+license = "MIT"
+
+[project.scripts]
+sandpip = "sandpip.cli:main"

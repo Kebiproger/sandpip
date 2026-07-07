@@ -1,0 +1,18 @@
+# C artifacts
+build/
+sandpip/sandpip.so
+*.so
+*.o
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+sandpip.egg-info/
+dist/
+.eggs/
+
+# IDE files
+.vscode/
+.idea/
