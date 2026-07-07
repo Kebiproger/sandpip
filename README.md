@@ -8,12 +8,13 @@ It prevents malicious scripts from stealing credentials, spawning reverse shells
 
 ## Architecture & Versions
 
-SandPip supports two levels of sandboxing depending on your security needs:
+SandPip supports two levels of sandboxing depending on your security needs, wrapped in a single smart command:
 
-| Command | Version | Isolation Technology | Targets Blocked | Strengths |
+| Command | Action | Isolation Technology | Targets Blocked | Strengths |
 | :--- | :--- | :--- | :--- | :--- |
-| `sandpip` (or `spip`) | **v1.0** | `LD_PRELOAD` Hooking | Files, sockets, execs | Lightweight, runs in user-space, dynamic DNS registry allowlist. |
-| `sandpip_v2` (or `spip2`) | **v2.0** | **Namespaces + Seccomp** | SSH/Cloud folders, ptrace, curl/wget execution | **Kernel-level protection**. Prevents escapes via static binaries or direct assembler syscalls. |
+| **`sandpip`** (or **`spip`**) | **Auto-Detect (Default)** | Detects OS features and runs the best available version (v2.0 ➔ v1.0 ➔ Audit Mode). | Dynamic selection | Zero-configuration. Works out of the box on any Linux environment. |
+| `sandpip_v2` (or `spip2`) | **Force v2.0** | **Namespaces + Seccomp** | SSH/Cloud folders, ptrace, curl/wget execution | **Kernel-level protection**. Prevents escapes via static binaries or direct assembler syscalls. |
+| *v1.0 Internal* | **Force v1.0** | `LD_PRELOAD` Hooking | Files, sockets, execs | Lightweight, runs in user-space, dynamic DNS registry allowlist. |
 
 ---
 
@@ -22,7 +23,7 @@ SandPip supports two levels of sandboxing depending on your security needs:
 Install SandPip directly from GitHub using `pip`:
 
 ```bash
-pip install git+https://github.com/Kebiproger/sandpip.git
+pip install git+https://github.com/YOUR_GITHUB_USERNAME/sandpip.git
 ```
 
 This compiles the C components automatically and registers four global commands: `sandpip`, `sandpip_v2`, `spip`, and `spip2`.
@@ -34,15 +35,20 @@ This compiles the C components automatically and registers four global commands:
 
 ## Usage
 
-### Version 1.0 (LD_PRELOAD Sandbox)
-Best for general lightweight use. Intercepts glibc dynamic calls to monitor files and DNS resolution.
+### 1. Standard Usage (Recommended)
+Simply prefix your standard `pip install` commands with `spip` (or `sandpip`):
 
 ```bash
 spip install some-package
 ```
 
-### Version 2.0 (Kernel Isolation Sandbox)
-Best for strict security. Isolates the process in a new Linux namespace, hiding sensitive directories at the filesystem level and blocking kernel operations via Seccomp.
+The script will automatically detect your kernel configuration:
+- If User Namespaces are enabled ➔ It launches the robust **v2.0 Kernel Sandbox**.
+- If Namespaces are blocked ➔ It gracefully falls back to the **v1.0 User-space Sandbox** (LD_PRELOAD).
+- If no sandbox is available ➔ It runs in **Audit/Warn Mode** (raw execution with a security warning).
+
+### 2. Strict Kernel Isolation
+To bypass auto-detection and force the system-level Namespaces + Seccomp sandbox:
 
 ```bash
 spip2 install some-package
@@ -52,11 +58,11 @@ spip2 install some-package
 
 * **Allow a custom registry domain**:
   ```bash
-  SANDPIP_ALLOWED_DOMAINS="packages.example.com" spip2 install some-package
+  SANDPIP_ALLOWED_DOMAINS="packages.example.com" spip install some-package
   ```
 * **Allow a raw IP address**:
   ```bash
-  SANDPIP_ALLOWED_IPS="1.2.3.4" spip2 install some-package
+  SANDPIP_ALLOWED_IPS="1.2.3.4" spip install some-package
   ```
 
 ---
@@ -64,12 +70,12 @@ spip2 install some-package
 ## Security Features in Detail
 
 ### 1. File Access Protection
-* **v1.0**: Hooks `open`, `openat`, `openat2` and blocks access to sensitive paths (like `~/.ssh/`, `~/.aws/`, `.env` files).
-* **v2.0**: Uses **Mount Namespaces** to mount a clean `tmpfs` over sensitive directories (`~/.ssh`, `~/.aws`, `~/.gcp`, `~/.kube`) and bind mounts `/dev/null` over `.env` files. Inside the sandbox, these files physically do not exist.
+* **v1.0 (LD_PRELOAD)**: Hooks `open`, `openat`, `openat2` and blocks access to sensitive paths (like `~/.ssh/`, `~/.aws/`, `.env` files).
+* **v2.0 (Namespaces)**: Uses **Mount Namespaces** to mount a clean `tmpfs` over sensitive directories (`~/.ssh`, `~/.aws`, `~/.gcp`, `~/.kube`) and bind mounts `/dev/null` over `.env` files. Inside the sandbox, these files physically do not exist.
 
 ### 2. Process Execution Protection
-* **v1.0**: Hooks `execve` to block shell utilities (`curl`, `wget`, `netcat`, interactive `bash`/`sh`).
-* **v2.0**: Bind mounts `/dev/null` over system binaries (`/usr/bin/curl`, `/usr/bin/wget`, `/usr/bin/nc`, etc.). Even static binaries cannot spawn these utilities.
+* **v1.0 (LD_PRELOAD)**: Hooks `execve` to block shell utilities (`curl`, `wget`, `netcat`, interactive `bash`/`sh`).
+* **v2.0 (Namespaces)**: Bind mounts `/dev/null` over system binaries (`/usr/bin/curl`, `/usr/bin/wget`, `/usr/bin/nc`, etc.). Even static binaries cannot spawn these utilities.
 
 ### 3. Kernel hardening (v2.0)
 * Applies a **Seccomp-BPF** filter that blocks `ptrace` (preventing process memory injection), `reboot`, `syslog`, and `kexec_load` at the kernel level with `EPERM`.
