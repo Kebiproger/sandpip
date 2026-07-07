@@ -4,7 +4,6 @@
 
 # SandPip
 
-[![CI](https://github.com/Kebiproger/sandpip/actions/workflows/test.yml/badge.svg)](https://github.com/Kebiproger/sandpip/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 SandPip is a lightweight, secure sandbox for risky package-manager install scripts (such as `setup.py` in pip or `postinstall` in npm). 
