@@ -4,7 +4,7 @@
 
 # SandPip
 
-[![CI](https://github.com/YOUR_GITHUB_USERNAME/sandpip/actions/workflows/test.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/sandpip/actions/workflows/test.yml)
+[![CI](https://github.com/Kebiproger/sandpip/actions/workflows/test.yml/badge.svg)](https://github.com/Kebiproger/sandpip/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 SandPip is a lightweight, secure sandbox for risky package-manager install scripts (such as `setup.py` in pip or `postinstall` in npm). 
@@ -52,7 +52,7 @@ graph TD
 Install SandPip directly from GitHub using `pip`:
 
 ```bash
-pip install git+https://github.com/YOUR_GITHUB_USERNAME/sandpip.git
+pip install git+https://github.com/Kebiproger/sandpip.git
 ```
 
 This compiles the C components automatically and registers four global commands: `sandpip`, `sandpip_v2`, `spip`, and `spip2`.
