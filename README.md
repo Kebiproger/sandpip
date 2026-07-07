@@ -22,7 +22,7 @@ SandPip supports two levels of sandboxing depending on your security needs:
 Install SandPip directly from GitHub using `pip`:
 
 ```bash
-pip install git+https://github.com/YOUR_GITHUB_USERNAME/sandpip.git
+pip install git+https://github.com/Kebiproger/sandpip.git
 ```
 
 This compiles the C components automatically and registers four global commands: `sandpip`, `sandpip_v2`, `spip`, and `spip2`.
