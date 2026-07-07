@@ -41,25 +41,37 @@ def resolve_allowed_ips(domains: list[str]) -> list[str]:
     return sorted(ips)
 
 
-def main() -> int:
-    library = Path(__file__).resolve().parent / "sandpip.so"
-
-    if not library.exists():
-        library = Path(__file__).resolve().parents[1] / "build" / "sandpip.so"
-
-    if not library.exists():
-        print(
-            f"sandpip: missing {library}; please reinstall or rebuild the package",
-            file=sys.stderr,
+def check_v2_available(launcher_path: Path) -> bool:
+    try:
+        res = subprocess.run(
+            [str(launcher_path), "true"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=1
         )
-        return 2
+        return res.returncode == 0
+    except Exception:
+        return False
+
+
+def main() -> int:
+    # 1. Сначала проверяем доступность v3 (eBPF) - пока False
+    v3_available = False
+
+    # 2. Проверяем доступность v2 (Namespaces + Seccomp)
+    launcher_v2 = Path(__file__).resolve().parent / "sandpip_v2_launcher"
+    if not launcher_v2.exists():
+        launcher_v2 = Path(__file__).resolve().parents[1] / "build" / "sandpip_v2_launcher"
+
+    v2_available = launcher_v2.exists() and check_v2_available(launcher_v2)
+
+    # 3. Ищем C-библиотеку v1 (LD_PRELOAD)
+    library_v1 = Path(__file__).resolve().parent / "sandpip.so"
+    if not library_v1.exists():
+        library_v1 = Path(__file__).resolve().parents[1] / "build" / "sandpip.so"
 
     command = ["pip", *sys.argv[1:]]
     env = os.environ.copy()
-    existing_preload = env.get("LD_PRELOAD")
-    env["LD_PRELOAD"] = (
-        f"{library} {existing_preload}" if existing_preload else str(library)
-    )
 
     allowed_domains = [
         *DEFAULT_ALLOWED_DOMAINS,
@@ -69,12 +81,35 @@ def main() -> int:
         *split_env_list(env.get("SANDPIP_ALLOWED_IPS")),
         *resolve_allowed_ips(allowed_domains),
     ]
-
     env.setdefault("SANDPIP_ENFORCE_NETWORK", "1")
     env["SANDPIP_ALLOWED_IPS"] = ",".join(sorted(set(allowed_ips)))
     env["SANDPIP_ALLOWED_DOMAINS"] = ",".join(allowed_domains)
 
-    return subprocess.call(command, env=env)
+    if v3_available:
+        print("sandpip: using v3 eBPF isolation engine", file=sys.stderr)
+        return 1
+    elif v2_available:
+        print("sandpip: using v2 kernel isolation engine (Namespaces & Seccomp)", file=sys.stderr)
+        if library_v1.exists():
+            existing_preload = env.get("LD_PRELOAD")
+            env["LD_PRELOAD"] = (
+                f"{library_v1} {existing_preload}" if existing_preload else str(library_v1)
+            )
+        v2_command = [str(launcher_v2), "pip", *sys.argv[1:]]
+        return subprocess.call(v2_command, env=env)
+    elif library_v1.exists():
+        print("sandpip: using v1 user-space isolation engine (LD_PRELOAD)", file=sys.stderr)
+        existing_preload = env.get("LD_PRELOAD")
+        env["LD_PRELOAD"] = (
+            f"{library_v1} {existing_preload}" if existing_preload else str(library_v1)
+        )
+        return subprocess.call(command, env=env)
+    else:
+        print(
+            "sandpip: WARNING: no sandbox engine is available! Running in raw audit/warn mode.",
+            file=sys.stderr,
+        )
+        return subprocess.call(command, env=env)
 
 
 if __name__ == "__main__":
