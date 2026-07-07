@@ -1,114 +1,98 @@
 # SandPip
 
-SandPip is a lightweight, secure `LD_PRELOAD` sandbox for risky package-manager install scripts (such as `setup.py` in pip or `postinstall` in npm). 
+SandPip is a lightweight, secure sandbox for risky package-manager install scripts (such as `setup.py` in pip or `postinstall` in npm). 
 
-It intercepts file accesses, process executions, and network connections to protect your sensitive credentials and files from malicious code during package installation.
+It prevents malicious scripts from stealing credentials, spawning reverse shells, or making unauthorized network requests during package installation.
 
-## Features
+---
 
-- **File Access Prevention**: Intercepts `open`, `open64`, `openat`, `openat64`, `openat2`, `fopen`, `fopen64` (including low-level calls via `syscall()`).
-- **Dynamic DNS Allowlisting**: Intercepts DNS resolution (`getaddrinfo`, `gethostbyname`, `gethostbyname2`) to restrict network connections strictly to approved package registries (like `pypi.org`, `files.pythonhosted.org`, and `github.com`).
-- **Process Blocking**: Intercepts `execve`, `execveat`, `fexecve`, `posix_spawn`, and `posix_spawnp` to block unauthorized utility executions (like `curl`, `wget`, `netcat`, and interactive shells).
+## Architecture & Versions
 
-### Intercepted & Blocked Targets
+SandPip supports two levels of sandboxing depending on your security needs:
 
-* **Files & Configs**:
-  - `~/.ssh/`
-  - `~/.aws/`
-  - `~/.config/gcloud/`
-  - `~/.gcp/`
-  - `~/.kube/`
-  - `~/.npmrc`
-  - `~/.pypirc`
-  - Any `.env` file or path segment
-* **Network & Connects**:
-  - Automatically blocks all connections to public IPs except those resolved from allowed domains.
-  - By default, local (`127.0.0.1`, `localhost`) and private subnet IP addresses are allowed.
-* **Process Executions**:
-  - `curl`
-  - `wget`
-  - `nc`, `ncat`, `netcat`
-  - Interactive shells (`bash -i`, `sh -i`)
+| Command | Version | Isolation Technology | Targets Blocked | Strengths |
+| :--- | :--- | :--- | :--- | :--- |
+| `sandpip` (or `spip`) | **v1.0** | `LD_PRELOAD` Hooking | Files, sockets, execs | Lightweight, runs in user-space, dynamic DNS registry allowlist. |
+| `sandpip_v2` (or `spip2`) | **v2.0** | **Namespaces + Seccomp** | SSH/Cloud folders, ptrace, curl/wget execution | **Kernel-level protection**. Prevents escapes via static binaries or direct assembler syscalls. |
 
 ---
 
 ## Installation
 
-You can install SandPip directly from GitHub using `pip`:
+Install SandPip directly from GitHub using `pip`:
 
 ```bash
 pip install git+https://github.com/YOUR_GITHUB_USERNAME/sandpip.git
 ```
 
+This compiles the C components automatically and registers four global commands: `sandpip`, `sandpip_v2`, `spip`, and `spip2`.
+
 > [!NOTE]
-> Since SandPip includes a C sandbox library, a C compiler (like `gcc`) must be installed on your Linux system.
+> Compilation requires a C compiler (such as `gcc`) installed on your Linux system.
 
 ---
 
 ## Usage
 
-Once installed, the `sandpip` command becomes available globally. It acts as a wrapper around `pip`.
-
-### Basic Usage
-
-Simply prefix your standard `pip install` commands with `sandpip`:
+### Version 1.0 (LD_PRELOAD Sandbox)
+Best for general lightweight use. Intercepts glibc dynamic calls to monitor files and DNS resolution.
 
 ```bash
-sandpip install some-risky-package
+spip install some-package
 ```
 
-This runs `pip` under the `LD_PRELOAD` sandbox, intercepting any filesystem, process, or network requests initiated by the package's install script.
-
-### Custom Registry Configuration
-
-To allow custom package registries or domains, use the `SANDPIP_ALLOWED_DOMAINS` environment variable:
+### Version 2.0 (Kernel Isolation Sandbox)
+Best for strict security. Isolates the process in a new Linux namespace, hiding sensitive directories at the filesystem level and blocking kernel operations via Seccomp.
 
 ```bash
-SANDPIP_ALLOWED_DOMAINS="packages.example.com" sandpip install some-package
+spip2 install some-package
 ```
 
-To allow specific raw IP addresses:
+### Advanced Options
 
-```bash
-SANDPIP_ALLOWED_IPS="1.2.3.4" sandpip install some-package
-```
+* **Allow a custom registry domain**:
+  ```bash
+  SANDPIP_ALLOWED_DOMAINS="packages.example.com" spip2 install some-package
+  ```
+* **Allow a raw IP address**:
+  ```bash
+  SANDPIP_ALLOWED_IPS="1.2.3.4" spip2 install some-package
+  ```
 
 ---
 
-## Local Development & Compilation
+## Security Features in Detail
 
-For local hacking or testing, you can use the provided `Makefile`.
+### 1. File Access Protection
+* **v1.0**: Hooks `open`, `openat`, `openat2` and blocks access to sensitive paths (like `~/.ssh/`, `~/.aws/`, `.env` files).
+* **v2.0**: Uses **Mount Namespaces** to mount a clean `tmpfs` over sensitive directories (`~/.ssh`, `~/.aws`, `~/.gcp`, `~/.kube`) and bind mounts `/dev/null` over `.env` files. Inside the sandbox, these files physically do not exist.
+
+### 2. Process Execution Protection
+* **v1.0**: Hooks `execve` to block shell utilities (`curl`, `wget`, `netcat`, interactive `bash`/`sh`).
+* **v2.0**: Bind mounts `/dev/null` over system binaries (`/usr/bin/curl`, `/usr/bin/wget`, `/usr/bin/nc`, etc.). Even static binaries cannot spawn these utilities.
+
+### 3. Kernel hardening (v2.0)
+* Applies a **Seccomp-BPF** filter that blocks `ptrace` (preventing process memory injection), `reboot`, `syslog`, and `kexec_load` at the kernel level with `EPERM`.
+
+---
+
+## Local Development & Testing
+
+Use the provided `Makefile` to compile or run test suites locally.
 
 ### Compile
-
 ```bash
 make
 ```
 
-This creates the sandbox library in `build/sandpip.so`.
-
 ### Run Tests
-
-To run the security tests (which verify file, execution, and network blocks):
-
 ```bash
-make test          # Tests file & process execution blocking
-make test-network  # Tests static and dynamic network allowlisting
+make test        # Runs v1.0 file/process validation tests
+make test-network # Runs v1.0 dynamic DNS registry allowlist tests
+make test-v2     # Runs v2.0 kernel namespaces and seccomp validation tests
 ```
 
-### Clean Build
-
+### Clean
 ```bash
 make clean
 ```
-
----
-
-## Limitations
-
-`LD_PRELOAD` relies on dynamic linking and protects processes that call standard glibc symbols. 
-* It **cannot** intercept static binaries, processes executing direct assembler syscalls (e.g., Go binaries), or programs that explicitly clear their environment variables.
-* SandPip is optimized for standard Python runtimes and interpreters.
-* Works only on Linux systems.
-
-For enterprise-grade sandboxing, namespaces, seccomp-bpf, or containerized execution (Docker) should be used instead.

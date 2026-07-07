@@ -12,3 +12,6 @@ license = "MIT"
 
 [project.scripts]
 sandpip = "sandpip.cli:main"
+sandpip_v2 = "sandpip.cli_v2:main"
+spip = "sandpip.cli:main"
+spip2 = "sandpip.cli_v2:main"
