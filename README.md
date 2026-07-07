@@ -1,4 +1,11 @@
+<p align="center">
+  <img src="assets/logo.jpg" alt="SandPip Logo" width="200" height="200"/>
+</p>
+
 # SandPip
+
+[![CI](https://github.com/YOUR_GITHUB_USERNAME/sandpip/actions/workflows/test.yml/badge.svg)](https://github.com/YOUR_GITHUB_USERNAME/sandpip/actions/workflows/test.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 SandPip is a lightweight, secure sandbox for risky package-manager install scripts (such as `setup.py` in pip or `postinstall` in npm). 
 
@@ -6,15 +13,37 @@ It prevents malicious scripts from stealing credentials, spawning reverse shells
 
 ---
 
-## Architecture & Versions
+## Architecture & How It Works
 
 SandPip supports two levels of sandboxing depending on your security needs, wrapped in a single smart command:
+
+```mermaid
+graph TD
+    A[pip install requests] --> B{sandpip launcher}
+    B -- Auto-Detects OS --> C[Namespaces Available]
+    B -- Fallback --> D[User-space Only]
+    
+    C --> E[v2.0 Kernel Sandbox]
+    E --> E1[Mount Namespaces: hide ~/.ssh, .env]
+    E --> E2[Seccomp BPF: block ptrace, reboot]
+    E --> E3[Bind Mounts: block curl, wget, nc]
+    
+    D --> F[v1.0 LD_PRELOAD Sandbox]
+    F --> F1[Hook libc functions: open, execve, connect]
+    F --> F2[Dynamic DNS: allow pypi.org, block others]
+    
+    E1 --> G[Safe Execution of setup.py]
+    E2 --> G
+    E3 --> G
+    F1 --> G
+    F2 --> G
+```
 
 | Command | Action | Isolation Technology | Targets Blocked | Strengths |
 | :--- | :--- | :--- | :--- | :--- |
 | **`sandpip`** (or **`spip`**) | **Auto-Detect (Default)** | Detects OS features and runs the best available version (v2.0 ➔ v1.0 ➔ Audit Mode). | Dynamic selection | Zero-configuration. Works out of the box on any Linux environment. |
 | `sandpip_v2` (or `spip2`) | **Force v2.0** | **Namespaces + Seccomp** | SSH/Cloud folders, ptrace, curl/wget execution | **Kernel-level protection**. Prevents escapes via static binaries or direct assembler syscalls. |
-| *v1.0 Internal* | **Force v1.0** | `LD_PRELOAD` Hooking | Files, sockets, execs | Lightweight, runs in user-space, dynamic DNS registry allowlist. |
+| `sandpip_v1` (or `spip1`) | **Force v1.0** | `LD_PRELOAD` Hooking | Files, sockets, execs | Lightweight, runs in user-space, dynamic DNS registry allowlist. |
 
 ---
 
@@ -23,7 +52,7 @@ SandPip supports two levels of sandboxing depending on your security needs, wrap
 Install SandPip directly from GitHub using `pip`:
 
 ```bash
-pip install git+https://github.com/Kebiproger/sandpip.git
+pip install git+https://github.com/YOUR_GITHUB_USERNAME/sandpip.git
 ```
 
 This compiles the C components automatically and registers four global commands: `sandpip`, `sandpip_v2`, `spip`, and `spip2`.
@@ -52,6 +81,13 @@ To bypass auto-detection and force the system-level Namespaces + Seccomp sandbox
 
 ```bash
 spip2 install some-package
+```
+
+### 3. Lightweight User-space Isolation
+To force the `LD_PRELOAD` sandbox:
+
+```bash
+spip1 install some-package
 ```
 
 ### Advanced Options
