@@ -2,6 +2,7 @@
 import ctypes
 import os
 import sys
+import shutil
 from pathlib import Path
 
 def test_seccomp_ptrace():
@@ -39,12 +40,23 @@ def test_bind_mount_env():
         print("[OK] .env file does not exist, safe")
 
 def test_blocked_binaries():
-    print("[*] Testing blocked binaries (curl)...")
+    print("[*] Testing blocked binaries...")
+    target_bin = None
+    for path in ["/usr/bin/curl", "/bin/curl", "/usr/bin/wget", "/bin/wget", "/usr/bin/nc", "/bin/nc"]:
+        if os.path.exists(path):
+            target_bin = path
+            break
+            
+    if not target_bin:
+        print("[OK] No blacklisted binaries (curl/wget/nc) found in the system, safe")
+        return
+
+    print(f"[*] Testing blocked binary: {target_bin}")
     try:
         pid = os.fork()
         if pid == 0:
             try:
-                os.execve("/usr/bin/curl", ["curl"], {})
+                os.execve(target_bin, [target_bin], {})
                 os._exit(0)
             except PermissionError:
                 os._exit(100)
@@ -56,14 +68,14 @@ def test_blocked_binaries():
         _, status = os.waitpid(pid, 0)
         code = os.waitstatus_to_exitcode(status)
         if code == 100:
-            print("[OK] curl execution blocked at filesystem level (Permission denied)")
+            print(f"[OK] {target_bin} execution blocked at filesystem level (Permission denied)")
         elif code == 101:
-            print("[OK] curl is not installed in the system, safe")
+            print(f"[OK] {target_bin} is not found inside namespace, safe")
         else:
-            print(f"[ERROR] curl execution returned unexpected exit code: {code}")
+            print(f"[ERROR] {target_bin} execution returned unexpected exit code: {code}")
             sys.exit(1)
     except Exception as exc:
-        print(f"[ERROR] failed to test curl: {exc}")
+        print(f"[ERROR] failed to test binary blocking: {exc}")
         sys.exit(1)
 
 def main():

@@ -78,6 +78,7 @@ def main() -> int:
     env["SANDPIP_ALLOWED_IPS"] = ",".join(sorted(set(allowed_ips)))
     env["SANDPIP_ALLOWED_DOMAINS"] = ",".join(allowed_domains)
 
+    print("sandpip: forcing v2 kernel isolation engine (Namespaces & Seccomp)", file=sys.stderr)
     # Запускаем C-лаунчер, который применит Namespaces/Seccomp, а затем вызовет pip
     command = [str(launcher), "pip", *sys.argv[1:]]
     return subprocess.call(command, env=env)

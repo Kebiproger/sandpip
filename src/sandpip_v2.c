@@ -146,10 +146,15 @@ int main(int argc, char *argv[])
     bind_mount_null_over_file(".env");
 
     bind_mount_null_over_file("/usr/bin/curl");
+    bind_mount_null_over_file("/bin/curl");
     bind_mount_null_over_file("/usr/bin/wget");
+    bind_mount_null_over_file("/bin/wget");
     bind_mount_null_over_file("/usr/bin/nc");
+    bind_mount_null_over_file("/bin/nc");
     bind_mount_null_over_file("/usr/bin/netcat");
+    bind_mount_null_over_file("/bin/netcat");
     bind_mount_null_over_file("/usr/bin/ncat");
+    bind_mount_null_over_file("/bin/ncat");
 
     if (setup_seccomp() != 0) {
         fprintf(stderr, "sandpip_v2: failed to apply seccomp filter\n");
