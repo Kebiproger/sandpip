@@ -17,6 +17,8 @@
 #include <sys/syscall.h>
 #include <netdb.h>
 #include <pthread.h>
+#include <time.h>
+#include <execinfo.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -91,14 +93,41 @@ static void init_real_functions(void)
     sandpip_internal_call--;
 }
 
-static void sandpip_warn(const char *kind, const char *target)
+static void sandpip_log(const char *kind, const char *target)
 {
     if (target == NULL) {
         target = "(null)";
     }
 
+    const char *log_path = getenv("SANDPIP_LOG_FILE");
+    if (log_path == NULL) {
+        log_path = "/tmp/sandpip.log";
+    }
+
+    // Try to find the calling library
+    char library_name[PATH_MAX] = "unknown";
+    void *buffer[10];
+    int size = backtrace(buffer, 10);
+    if (size > 0) {
+        // Skip the first frame (sandpip_log) and second frame (the hook)
+        for (int i = 2; i < size; i++) {
+            Dl_info info;
+            if (dladdr(buffer[i], &info) && info.dli_fname) {
+                strncpy(library_name, info.dli_fname, sizeof(library_name) - 1);
+                break;
+            }
+        }
+    }
+
     sandpip_internal_call++;
-    fprintf(stderr, "[SandPip BLOCK] %s denied: %s\n", kind, target);
+    FILE *f = fopen(log_path, "a");
+    if (f) {
+        time_t now = time(NULL);
+        char timestamp[20];
+        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+        fprintf(f, "[%s] [BLOCK] [%s] %s denied: %s\n", timestamp, library_name, kind, target);
+        fclose(f);
+    }
     sandpip_internal_call--;
 }
 
@@ -567,7 +596,7 @@ static const char *network_target(const struct sockaddr *addr, char *out, size_t
 
 static int deny_with_errno(const char *kind, const char *target, int err)
 {
-    sandpip_warn(kind, target);
+    sandpip_log(kind, target);
     errno = err;
     return -1;
 }
@@ -715,7 +744,7 @@ FILE *fopen(const char *pathname, const char *mode)
     init_real_functions();
 
     if (!sandpip_internal_call && is_blocked_path(pathname)) {
-        sandpip_warn("file access", pathname);
+        sandpip_log("file access", pathname);
         errno = EACCES;
         return NULL;
     }
@@ -728,7 +757,7 @@ FILE *fopen64(const char *pathname, const char *mode)
     init_real_functions();
 
     if (!sandpip_internal_call && is_blocked_path(pathname)) {
-        sandpip_warn("file access", pathname);
+        sandpip_log("file access", pathname);
         errno = EACCES;
         return NULL;
     }
@@ -788,7 +817,7 @@ int posix_spawn(pid_t *pid, const char *path,
     init_real_functions();
 
     if (!sandpip_internal_call && is_blocked_exec(path, argv)) {
-        sandpip_warn("exec", path);
+        sandpip_log("exec", path);
         return EACCES;
     }
 
@@ -803,7 +832,7 @@ int posix_spawnp(pid_t *pid, const char *file,
     init_real_functions();
 
     if (!sandpip_internal_call && is_blocked_exec(file, argv)) {
-        sandpip_warn("exec", file);
+        sandpip_log("exec", file);
         return EACCES;
     }
 
@@ -830,7 +859,7 @@ int getaddrinfo(const char *node, const char *service,
 
     if (!sandpip_internal_call && network_filter_enabled()) {
         if (node != NULL && !is_allowed_domain(node)) {
-            sandpip_warn("DNS resolution", node);
+            sandpip_log("DNS resolution", node);
             return EAI_NONAME;
         }
     }
@@ -854,7 +883,7 @@ struct hostent *gethostbyname(const char *name)
 
     if (!sandpip_internal_call && network_filter_enabled()) {
         if (name != NULL && !is_allowed_domain(name)) {
-            sandpip_warn("DNS resolution (gethostbyname)", name);
+            sandpip_log("DNS resolution (gethostbyname)", name);
             h_errno = HOST_NOT_FOUND;
             return NULL;
         }
@@ -891,7 +920,7 @@ struct hostent *gethostbyname2(const char *name, int af)
 
     if (!sandpip_internal_call && network_filter_enabled()) {
         if (name != NULL && !is_allowed_domain(name)) {
-            sandpip_warn("DNS resolution (gethostbyname2)", name);
+            sandpip_log("DNS resolution (gethostbyname2)", name);
             h_errno = HOST_NOT_FOUND;
             return NULL;
         }
@@ -941,7 +970,7 @@ long syscall(long number, ...)
             int dirfd = (int)arg1;
             const char *pathname = (const char *)arg2;
             if (is_blocked_openat_path(dirfd, pathname)) {
-                sandpip_warn("file access via syscall(openat2)", pathname);
+                sandpip_log("file access via syscall(openat2)", pathname);
                 errno = EACCES;
                 return -1;
             }
@@ -950,7 +979,7 @@ long syscall(long number, ...)
             int dirfd = (int)arg1;
             const char *pathname = (const char *)arg2;
             if (is_blocked_openat_path(dirfd, pathname)) {
-                sandpip_warn("file access via syscall(openat)", pathname);
+                sandpip_log("file access via syscall(openat)", pathname);
                 errno = EACCES;
                 return -1;
             }
@@ -958,7 +987,7 @@ long syscall(long number, ...)
         else if (number == SYS_open) {
             const char *pathname = (const char *)arg1;
             if (is_blocked_path(pathname)) {
-                sandpip_warn("file access via syscall(open)", pathname);
+                sandpip_log("file access via syscall(open)", pathname);
                 errno = EACCES;
                 return -1;
             }
@@ -967,7 +996,7 @@ long syscall(long number, ...)
             const struct sockaddr *addr = (const struct sockaddr *)arg2;
             if (network_filter_enabled() && !is_allowed_ip(addr)) {
                 char target[INET6_ADDRSTRLEN];
-                sandpip_warn("network connect via syscall(connect)", network_target(addr, target, sizeof(target)));
+                sandpip_log("network connect via syscall(connect)", network_target(addr, target, sizeof(target)));
                 errno = EPERM;
                 return -1;
             }
@@ -976,7 +1005,7 @@ long syscall(long number, ...)
             const char *pathname = (const char *)arg1;
             char *const *argv = (char *const *)arg2;
             if (is_blocked_exec(pathname, argv)) {
-                sandpip_warn("exec via syscall(execve)", pathname);
+                sandpip_log("exec via syscall(execve)", pathname);
                 errno = EACCES;
                 return -1;
             }
@@ -985,7 +1014,7 @@ long syscall(long number, ...)
             const char *pathname = (const char *)arg2;
             char *const *argv = (char *const *)arg3;
             if (is_blocked_exec(pathname, argv)) {
-                sandpip_warn("exec via syscall(execveat)", pathname);
+                sandpip_log("exec via syscall(execveat)", pathname);
                 errno = EACCES;
                 return -1;
             }

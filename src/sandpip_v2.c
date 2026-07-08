@@ -13,10 +13,48 @@
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 #include <stddef.h>
+#include <time.h>
+#include <sys/wait.h>
+#include <dlfcn.h>
+#include <execinfo.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
 #endif
+
+static void sandpip_log(const char *kind, const char *target)
+{
+    if (target == NULL) {
+        target = "(null)";
+    }
+
+    const char *log_path = getenv("SANDPIP_LOG_FILE");
+    if (log_path == NULL) {
+        log_path = "/tmp/sandpip.log";
+    }
+
+    char library_name[PATH_MAX] = "unknown";
+    void *buffer[10];
+    int size = backtrace(buffer, 10);
+    if (size > 0) {
+        for (int i = 2; i < size; i++) {
+            Dl_info info;
+            if (dladdr(buffer[i], &info) && info.dli_fname) {
+                strncpy(library_name, info.dli_fname, sizeof(library_name) - 1);
+                break;
+            }
+        }
+    }
+
+    FILE *f = fopen(log_path, "a");
+    if (f) {
+        time_t now = time(NULL);
+        char timestamp[20];
+        strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", localtime(&now));
+        fprintf(f, "[%s] [BLOCK] [%s] %s denied: %s\n", timestamp, library_name, kind, target);
+        fclose(f);
+    }
+}
 
 static void write_file(const char *path, const char *fmt, ...)
 {
@@ -44,7 +82,7 @@ static void mount_tmpfs_over_dir(const char *path)
     struct stat st;
     if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
         if (mount("tmpfs", path, "tmpfs", 0, NULL) != 0) {
-            fprintf(stderr, "sandpip_v2: warning: failed to mount tmpfs over %s: %s\n", path, strerror(errno));
+            sandpip_log("mount failure", path);
         }
     }
 }
@@ -54,7 +92,7 @@ static void bind_mount_null_over_file(const char *path)
     struct stat st;
     if (stat(path, &st) == 0 && S_ISREG(st.st_mode)) {
         if (mount("/dev/null", path, NULL, MS_BIND, NULL) != 0) {
-            fprintf(stderr, "sandpip_v2: warning: failed to bind mount /dev/null over %s: %s\n", path, strerror(errno));
+            sandpip_log("bind mount failure", path);
         }
     }
 }
@@ -109,8 +147,8 @@ int main(int argc, char *argv[])
     uid_t original_uid = getuid();
     gid_t original_gid = getgid();
 
-    if (unshare(CLONE_NEWUSER | CLONE_NEWNS) != 0) {
-        perror("sandpip_v2: unshare(CLONE_NEWUSER | CLONE_NEWNS) failed");
+    if (unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID) != 0) {
+        perror("sandpip_v2: unshare(CLONE_NEWUSER | CLONE_NEWNS | CLONE_NEWPID) failed");
         fprintf(stderr, "Please verify that user namespaces are enabled in your kernel (sysctl kernel.unprivileged_userns_clone=1)\n");
         return 1;
     }
@@ -161,8 +199,29 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    execvp(argv[1], &argv[1]);
-
-    perror("sandpip_v2: execvp failed");
-    return 1;
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Child process
+        if (mount("proc", "/proc", "proc", 0, NULL) != 0) {
+            // We can't easily log this to sandpip_log because it's a system error
+            // but we can ignore it or use perror
+        }
+        execvp(argv[1], &argv[1]);
+        perror("sandpip_v2: execvp failed");
+        exit(1);
+    } else if (pid > 0) {
+        // Parent process
+        int status;
+        if (waitpid(pid, &status, 0) == -1) {
+            perror("sandpip_v2: waitpid failed");
+            return 1;
+        }
+        if (WIFEXITED(status)) {
+            return WEXITSTATUS(status);
+        }
+        return 1;
+    } else {
+        perror("sandpip_v2: fork failed");
+        return 1;
+    }
 }

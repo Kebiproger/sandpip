@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sandpip"
-version = "2.0.0"
+version = "2.1.0"
 description = "A secure wrapper for pip utilizing LD_PRELOAD sandboxing"
 readme = "README.md"
 requires-python = ">=3.7"

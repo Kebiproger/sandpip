@@ -9,7 +9,7 @@ SO := $(BUILD_DIR)/sandpip.so
 SRC_V2 := src/sandpip_v2.c
 LAUNCHER_V2 := $(BUILD_DIR)/sandpip_v2_launcher
 
-.PHONY: all clean test test-network test-v2
+.PHONY: all clean test test-network test-v2 test-logs
 
 all: $(SO) $(LAUNCHER_V2)
 
@@ -25,6 +25,9 @@ $(LAUNCHER_V2): $(SRC_V2) | $(BUILD_DIR)
 test: $(SO)
 	LD_PRELOAD=$(abspath $(SO)) python3 tests/malicious.py
 	LD_PRELOAD=$(abspath $(SO)) python3 tests/test_openat2.py
+
+test-logs: $(SO)
+	LD_PRELOAD=$(abspath $(SO)) python3 tests/test_backtrace_log.py
 
 test-network: $(SO)
 	SANDPIP_ENFORCE_NETWORK=1 SANDPIP_ALLOWED_IPS= LD_PRELOAD=$(abspath $(SO)) python3 tests/network_allowlist.py blocked
